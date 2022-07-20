@@ -21,7 +21,12 @@ def init_particles():
         positions[i] = ti.Vector([col*spacing, floor*spacing, row*spacing]) + init_pos
 
 @ti.kernel
+def translation(x: ti.types.vector(3, ti.f32)):
+    for i in range(num_particles):
+        positions[i] += x
+
 def substep():
+    translation(ti.Vector([0, 0.01, 0.0]) / 100.0)
     pass
 
 #init the window, canvas, scene and camerea
