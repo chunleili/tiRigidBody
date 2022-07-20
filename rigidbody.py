@@ -1,4 +1,5 @@
 import taichi as ti
+import math
 
 ti.init()
 
@@ -25,9 +26,20 @@ def translation(x: ti.types.vector(3, ti.f32)):
     for i in range(num_particles):
         positions[i] += x
 
+@ti.kernel
+def rotation():
+    theta = 0.1 / 180.0 * math.pi
+    R = ti.Matrix([
+    [ti.cos(theta), -ti.sin(theta), 0.0], 
+    [ti.sin(theta), ti.cos(theta), 0.0], 
+    [0.0, 0.0, 1.0]
+    ])
+    for i in range(num_particles):
+        positions[i] = R@positions[i]
+
 def substep():
-    translation(ti.Vector([0, 0.01, 0.0]) / 100.0)
-    pass
+    # translation(ti.Vector([0, 0.01, 0.0]) / 100.0)
+    rotation()
 
 #init the window, canvas, scene and camerea
 window = ti.ui.Window("rigidbody", (1024, 1024),vsync=True)
