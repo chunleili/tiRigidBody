@@ -2,22 +2,30 @@ import taichi as ti
 
 ti.init()
 
-num_particles =2
+num_particles = 968
 dim=3
 
 positions = ti.Vector.field(dim, float, num_particles)
 
 @ti.kernel
 def init_particles():
-    positions[0] = ti.Vector([0.,0.,0.])
-    positions[1] = ti.Vector([0.,0.5,0.5])
+    init_pos = ti.Vector([0.0, 0.0, 0.0]) /100.0 
+    cube_size = 20 /100.0
+    spacing = 2 /100.0
+    num_per_row = (int) (cube_size // spacing) + 1
+    num_per_floor = num_per_row * num_per_row
+    for i in range(num_particles):
+        floor = i // (num_per_floor) 
+        row = (i % num_per_floor) // num_per_row
+        col = (i % num_per_floor) % num_per_row
+        positions[i] = ti.Vector([col*spacing, floor*spacing, row*spacing]) + init_pos
 
 @ti.kernel
 def substep():
     pass
 
 #init the window, canvas, scene and camerea
-window = ti.ui.Window("pbf", (1024, 1024),vsync=True)
+window = ti.ui.Window("rigidbody", (1024, 1024),vsync=True)
 canvas = window.get_canvas()
 scene = ti.ui.Scene()
 camera = ti.ui.make_camera()
@@ -45,7 +53,7 @@ def main():
         scene.ambient_light((0.5, 0.5, 0.5))
         
         #draw particles
-        scene.particles(positions, radius=0.02, color=(0, 1, 1))
+        scene.particles(positions, radius=0.01, color=(0, 1, 1))
 
         #show the frame
         canvas.scene(scene)
