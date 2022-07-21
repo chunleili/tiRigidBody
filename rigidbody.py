@@ -11,6 +11,7 @@ positions = ti.Vector.field(dim, float, num_particles)
 velocities = ti.Vector.field(dim, float, num_particles)
 pos_draw = ti.Vector.field(dim, float, num_particles)
 is_collided = ti.field(ti.i32, num_particles)
+any_is_collided = ti.field(ti.i32, shape=())
 
 @ti.kernel
 def init_particles():
@@ -46,7 +47,11 @@ def collision_detection():
     for i in range(num_particles):
         if (positions[i].y < 0):
             is_collided[i] = True
-            print(f"particle {i} is collied!")
+            # print(f"particle {i} is collied!")
+            any_is_collided[None] = True
+    if (any_is_collided[None] == True):
+        print(f"at least one particle is collided!")
+
 
 def substep():
     translation(ti.Vector([0, -0.1, 0.0]) )
