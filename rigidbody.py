@@ -10,6 +10,7 @@ world_scale_factor = 1.0/100.0
 positions = ti.Vector.field(dim, float, num_particles)
 velocities = ti.Vector.field(dim, float, num_particles)
 pos_draw = ti.Vector.field(dim, float, num_particles)
+is_collided = ti.field(ti.i32, num_particles)
 
 @ti.kernel
 def init_particles():
@@ -40,8 +41,16 @@ def rotation():
     for i in range(num_particles):
         positions[i] = R@positions[i]
 
+@ti.kernel
+def collision_detection():
+    for i in range(num_particles):
+        if (positions[i].y < 0):
+            is_collided[i] = True
+            print(f"particle {i} is collied!")
+
 def substep():
     translation(ti.Vector([0, -0.1, 0.0]) )
+    collision_detection()
     # rotation()
 
 @ti.kernel
