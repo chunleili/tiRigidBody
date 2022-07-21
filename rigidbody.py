@@ -63,7 +63,7 @@ def collision_detection():
 
 @ti.kernel
 def collision_response_particle():
-    n_dir = ti.Vector([0, 1, 0]).normalized()
+    n_dir = ti.Vector([1, ti.sqrt(3), 0]).normalized()
 
     for i in range(num_particles):
         if(is_collided[i] == True and velocities[i].dot(n_dir) < 0):
