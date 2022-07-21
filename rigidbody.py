@@ -6,6 +6,9 @@ ti.init()
 num_particles = 968
 dim=3
 world_scale_factor = 1.0/100.0
+mu_N = 0.9 # normal velocity attenuation factor
+mu_T = 0.2 # coulomb friction factor
+dt = 1.0
 
 positions = ti.Vector.field(dim, float, num_particles)
 velocities = ti.Vector.field(dim, float, num_particles)
@@ -16,7 +19,7 @@ paused = ti.field(ti.i32, shape=())
 
 @ti.kernel
 def init_particles():
-    init_pos = ti.Vector([0.0, 0.0, 0.0])
+    init_pos = ti.Vector([0.0, 10.0, 0.0])
     cube_size = 20 
     spacing = 2 
     num_per_row = (int) (cube_size // spacing) + 1
@@ -27,10 +30,14 @@ def init_particles():
         col = (i % num_per_floor) % num_per_row
         positions[i] = ti.Vector([col*spacing, floor*spacing, row*spacing]) + init_pos
 
+
+def init_velocities():
+    velocities.fill(ti.Vector([0.0, -0.1, 0.0]))
+
 @ti.kernel
-def translation(x: ti.types.vector(3, ti.f32)):
+def translation():
     for i in range(num_particles):
-        positions[i] += x
+        positions[i] += velocities[i] * dt
 
 @ti.kernel
 def rotation():
@@ -50,13 +57,30 @@ def collision_detection():
             is_collided[i] = True
             # print(f"particle {i} is collied!")
             any_is_collided[None] = True
-    if (any_is_collided[None] == True):
-        print(f"at least one particle is collided!")
+    # if (any_is_collided[None] == True):
+    #     print(f"at least one particle is collided!")
+
+@ti.kernel
+def collision_response_particle():
+    n_dir = ti.Vector([0, 1, 0]).normalized()
+
+    for i in range(num_particles):
+        if(is_collided[i] == True and velocities[i].dot(n_dir) < 0):
+            vn = velocities[i].dot(n_dir) * n_dir
+            vt = velocities[i] - vn
+            
+            vn_new = -mu_N * vn
+            a = ti.max((1 - mu_T * (1 + mu_N) * vn.norm() / (vt.norm() + 1e-5) ), 0)
+            vt_new = a * vt
+            
+            velocities[i] = vn_new + vt_new
 
 
 def substep():
-    translation(ti.Vector([0, -0.1, 0.0]) )
-    # collision_detection()
+    translation()
+    collision_detection()
+    if any_is_collided[None] == True:
+        collision_response_particle()
     # rotation()
 
 @ti.kernel
@@ -77,6 +101,7 @@ camera.fov(55)
 
 def main():
     init_particles()
+    init_velocities()
 
     while window.running:
         if window.get_event(ti.ui.PRESS):
