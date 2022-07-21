@@ -12,6 +12,7 @@ velocities = ti.Vector.field(dim, float, num_particles)
 pos_draw = ti.Vector.field(dim, float, num_particles)
 is_collided = ti.field(ti.i32, num_particles)
 any_is_collided = ti.field(ti.i32, shape=())
+paused = ti.field(ti.i32, shape=())
 
 @ti.kernel
 def init_particles():
@@ -55,7 +56,7 @@ def collision_detection():
 
 def substep():
     translation(ti.Vector([0, -0.1, 0.0]) )
-    collision_detection()
+    # collision_detection()
     # rotation()
 
 @ti.kernel
@@ -78,9 +79,15 @@ def main():
     init_particles()
 
     while window.running:
+        if window.get_event(ti.ui.PRESS):
+            #press space to pause the simulation
+            if window.event.key == ti.ui.SPACE:
+                paused[None] = not paused[None]
+
         #do the simulation in each step
-        for i in range(1):
-            substep()
+        if (paused[None] == False) :
+            for i in range(1):
+                substep()
 
         #set the camera, you can move around by pressing 'wasdeq'
         camera.track_user_inputs(window, movement_speed=0.03, hold_key=ti.ui.RMB)
