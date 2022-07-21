@@ -16,6 +16,7 @@ pos_draw = ti.Vector.field(dim, float, num_particles)
 is_collided = ti.field(ti.i32, num_particles)
 any_is_collided = ti.field(ti.i32, shape=())
 paused = ti.field(ti.i32, shape=())
+pos_draw_red = ti.Vector.field(dim, float, num_particles)
 
 @ti.kernel
 def init_particles():
@@ -75,6 +76,13 @@ def collision_response_particle():
             
             velocities[i] = vn_new + vt_new
 
+#dye the rebounced particle to red, for DEBUG use
+@ti.kernel
+def dye_rebounced_red():
+    for i in pos_draw_red:
+        pos_draw_red[i] = ti.Vector([-1e10, -1e10, -1e10]) # throw away from screen
+        if is_collided[i] == True:
+            pos_draw_red[i] = pos_draw[i]
 
 def substep():
     translation()
@@ -126,6 +134,8 @@ def main():
         #draw particles
         world_scale()
         scene.particles(pos_draw, radius=0.01, color=(0, 1, 1))
+        dye_rebounced_red()
+        scene.particles(pos_draw_red, radius=0.01, color=(1, 0, 0))
 
         #show the frame
         canvas.scene(scene)
