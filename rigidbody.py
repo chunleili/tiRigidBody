@@ -5,14 +5,17 @@ ti.init()
 
 num_particles = 968
 dim=3
+world_scale_factor = 1.0/100.0
 
 positions = ti.Vector.field(dim, float, num_particles)
+velocities = ti.Vector.field(dim, float, num_particles)
+pos_draw = ti.Vector.field(dim, float, num_particles)
 
 @ti.kernel
 def init_particles():
-    init_pos = ti.Vector([0.0, 0.0, 0.0]) /100.0 
-    cube_size = 20 /100.0
-    spacing = 2 /100.0
+    init_pos = ti.Vector([0.0, 0.0, 0.0])
+    cube_size = 20 
+    spacing = 2 
     num_per_row = (int) (cube_size // spacing) + 1
     num_per_floor = num_per_row * num_per_row
     for i in range(num_particles):
@@ -38,8 +41,13 @@ def rotation():
         positions[i] = R@positions[i]
 
 def substep():
-    # translation(ti.Vector([0, 0.01, 0.0]) / 100.0)
-    rotation()
+    translation(ti.Vector([0, -0.1, 0.0]) )
+    # rotation()
+
+@ti.kernel
+def world_scale():
+    for i in range(num_particles):
+        pos_draw[i] = positions[i] * world_scale_factor
 
 #init the window, canvas, scene and camerea
 window = ti.ui.Window("rigidbody", (1024, 1024),vsync=True)
@@ -57,7 +65,7 @@ def main():
 
     while window.running:
         #do the simulation in each step
-        for i in range(5):
+        for i in range(1):
             substep()
 
         #set the camera, you can move around by pressing 'wasdeq'
@@ -70,7 +78,8 @@ def main():
         scene.ambient_light((0.5, 0.5, 0.5))
         
         #draw particles
-        scene.particles(positions, radius=0.01, color=(0, 1, 1))
+        world_scale()
+        scene.particles(pos_draw, radius=0.01, color=(0, 1, 1))
 
         #show the frame
         canvas.scene(scene)
