@@ -18,6 +18,7 @@ any_is_collided = ti.field(ti.i32, shape=())
 paused = ti.field(ti.i32, shape=())
 pos_draw_red = ti.Vector.field(dim, float, num_particles)
 positions_inter = ti.Vector.field(dim, float, num_particles)
+radius_vector = ti.Vector.field(dim, float, num_particles)
 
 @ti.kernel
 def init_particles():
@@ -78,8 +79,39 @@ def collision_response_particle():
             velocities[i] = vn_new + vt_new
 
             #move to the boundary
-            phi = positions[i].y
-            positions_inter[i] = positions[i] + ti.abs(phi) * n_dir
+            phi = 0.1
+            positions_inter[i] += ti.abs(phi) * n_dir
+
+@ti.kernel
+def shape_matching():
+    #compute the radius vector 
+    #(vector from the old center of mass to the point)
+    sum = ti.Vector([0.0, 0.0, 0.0])
+    for i in range(num_particles):
+        sum += positions[i]
+    center_mass = (1.0 / num_particles) * sum
+    for i in range(num_particles):
+        radius_vector[i] = positions[i] - center_mass
+    print(center_mass)
+
+    #compute the new center of mass
+    sum = ti.Vector([0.0, 0.0, 0.0])
+    for i in range(num_particles):
+        sum += positions_inter[i]
+    center_mass_new = (1.0 / num_particles) * sum
+    print(center_mass_new)
+
+    #compute the transformation matrix
+    pass
+    #polar decomposition and extract rotation
+    pass
+    R = ti.Matrix.identity(ti.f32, 3)
+
+    #update the velocities and positions
+    for i in range(num_particles):
+        velocities[i] = (center_mass_new + R @ radius_vector[i] - positions[i]) / dt
+        positions[i] = center_mass_new + R @ radius_vector[i]
+
 
 @ti.kernel
 def collision_response_force():
@@ -107,8 +139,9 @@ def substep():
     translation()
     collision_detection()
     if any_is_collided[None] == True:
-        # collision_response_particle()
-        collision_response_force()
+        collision_response_particle()
+        # collision_response_force()
+        shape_matching()
     # rotation()
 
 @ti.kernel
