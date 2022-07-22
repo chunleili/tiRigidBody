@@ -81,6 +81,20 @@ def collision_response_particle():
             phi = positions[i].y
             positions_inter[i] = positions[i] + ti.abs(phi) * n_dir
 
+@ti.kernel
+def collision_response_force():
+    n_dir = ti.Vector([1, ti.sqrt(3), 0]).normalized()
+    k = 0.1
+    eps = 2.0
+    mass_inv = 1.0
+
+    for i in range(num_particles):
+        if(is_collided[i] == True and velocities[i].dot(n_dir) < 0):
+            phi = positions[i].y
+            penalty_force = k * (eps - phi) * n_dir
+            velocities[i] += dt * mass_inv * penalty_force
+            positions[i] += dt * velocities[i]
+
 #dye the rebounced particle to red, for DEBUG use
 @ti.kernel
 def dye_rebounced_red():
@@ -93,7 +107,8 @@ def substep():
     translation()
     collision_detection()
     if any_is_collided[None] == True:
-        collision_response_particle()
+        # collision_response_particle()
+        collision_response_force()
     # rotation()
 
 @ti.kernel
