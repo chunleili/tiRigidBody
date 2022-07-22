@@ -136,6 +136,8 @@ def dye_rebounced_red():
             pos_draw_red[i] = pos_draw[i]
 
 def substep():
+    is_collided.fill(0)
+    any_is_collided.fill(0)
     translation()
     collision_detection()
     if any_is_collided[None] == True:
