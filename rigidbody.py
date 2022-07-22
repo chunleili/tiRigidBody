@@ -17,6 +17,7 @@ is_collided = ti.field(ti.i32, num_particles)
 any_is_collided = ti.field(ti.i32, shape=())
 paused = ti.field(ti.i32, shape=())
 pos_draw_red = ti.Vector.field(dim, float, num_particles)
+positions_inter = ti.Vector.field(dim, float, num_particles)
 
 @ti.kernel
 def init_particles():
@@ -75,6 +76,10 @@ def collision_response_particle():
             vt_new = a * vt
             
             velocities[i] = vn_new + vt_new
+
+            #move to the boundary
+            phi = positions[i].y
+            positions_inter[i] = positions[i] + ti.abs(phi) * n_dir
 
 #dye the rebounced particle to red, for DEBUG use
 @ti.kernel
