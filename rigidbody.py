@@ -6,7 +6,7 @@ ti.init()
 num_particles = 962
 dim=3
 world_scale_factor = 1.0/100.0
-dt = 1e-1
+dt = 1e-3
 mass_inv = 1.0
 
 positions = ti.Vector.field(dim, float, num_particles)
@@ -75,14 +75,14 @@ def shape_matching():
     c /= num_particles
 
     #compute transformation matrix and extract rotation
-    A = sum1 = sum2 = ti.Matrix([[0.0] * 3 for _ in range(3)], ti.f32)
+    A = sum1 = sum2 = ti.Matrix([[0.0] * 3 for _ in range(3)], ti.f64)
     for i in range(num_particles):
         sum1 += (positions[i] - c).outer_product(radius_vector[i])
         sum2 += radius_vector[i].outer_product(radius_vector[i])
     A = sum1 @ sum2.inverse()
     R, _ = ti.polar_decompose(A)
 
-    R = ti.Matrix.identity(ti.f32, 3)
+    # R = ti.Matrix.identity(ti.f32, 3)
 
     #update velocities and positions
     for i in range(num_particles):
@@ -101,13 +101,22 @@ def update_vel_pos():
 
 @ti.kernel
 def collision_response():
-    eps = 2.0
-    k = 100.0
+    eps = 2.0 # the padding to prevent penatrating
+    k = 100.0 # stiffness of the penalty force
+    #boundary for skybox (xmin, ymin, zmin, xmax, ymax, zmax)
+    boundary = ti.Matrix([[0.0, 0.0, 0.0], [100.0, 100.0, 100.0]], ti.f32)
+    boundary[0,:] = boundary[0,:] + eps
+    boundary[1,:] = boundary[1,:] - eps
     for i in range(num_particles):
-        if positions[i].y < eps:
+        if positions[i].y < boundary[0,1]:
             n_dir = ti.Vector([0.0, 1.0, 0.0])
-            # positions[i].y = eps * 1.0001
-            penalty_force[i] = k * (eps - positions[i].y) * n_dir
+            phi = positions[i].y - boundary[0,1]
+            penalty_force[i] = k * ti.abs(phi)  * n_dir
+
+        if positions[i].x < boundary[0,1]:
+            n_dir = ti.Vector([-1.0, 0.0, 0.0])
+            phi = positions[i].x - boundary[1,0]
+            penalty_force[i] = k * ti.abs(phi)  * n_dir
 
 
 @ti.kernel
@@ -178,7 +187,7 @@ def main():
 
         #do the simulation in each step
         if (paused[None] == False) :
-            for i in range(1):
+            for i in range(int(0.05/dt)):
                 substep()
 
         #set the camera, you can move around by pressing 'wasdeq'
