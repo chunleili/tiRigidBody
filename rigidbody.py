@@ -20,10 +20,11 @@ paused = ti.field(ti.i32, shape=())
 is_collided = ti.field(ti.i32, num_particles)
 any_is_collided = ti.field(ti.i32, shape=())
 q_inv = ti.Matrix.field(n=3, m=3, dtype=ti.f32, shape=())
+goal = ti.Vector.field(dim, float, num_particles)
 
 @ti.kernel
 def init_particles():
-    init_pos = ti.Vector([50.0, 50.0, 0.0])
+    init_pos = ti.Vector([70.0, 50.0, 0.0])
     cube_size = 20 
     spacing = 2 
     num_per_row = (int) (cube_size // spacing) + 1
@@ -65,8 +66,8 @@ def shape_matching():
     gravity = ti.Vector([0.0, -9.8, 0.0])
     for i in range(num_particles):
         positions0[i] = positions[i]
-        force[i] = gravity + penalty_force[i]
-        velocities[i] += mass_inv * force[i] * dt 
+        f = gravity + penalty_force[i]
+        vel = mass_inv * force[i] * dt 
         positions[i] += velocities[i] * dt
 
     #compute the new(matched shape) mass center
@@ -85,9 +86,11 @@ def shape_matching():
     # R = ti.Matrix.identity(ti.f32, 3)
 
     #update velocities and positions
+    # time_integration()
     for i in range(num_particles):
-        positions[i] = c + R @ radius_vector[i]
-        velocities[i] = (positions[i] - positions0[i]) / dt
+        goal[i] = c + R @ radius_vector[i]
+        velocities[i] += (goal[i] - positions[i]) / dt
+        positions[i] += dt * velocities[i]
 
 @ti.kernel
 def precompute_q_inv():
