@@ -3,26 +3,26 @@ import math
 
 ti.init()
 
-num_particles = 968
+num_particles = 962
 dim=3
 world_scale_factor = 1.0/100.0
-mu_N = 1.0 # normal velocity attenuation factor
-mu_T = 1.0 # coulomb friction factor
-dt = 1.0
+dt = 1e-1
+mass_inv = 1.0
 
 positions = ti.Vector.field(dim, float, num_particles)
 velocities = ti.Vector.field(dim, float, num_particles)
 pos_draw = ti.Vector.field(dim, float, num_particles)
+force = ti.Vector.field(dim, float, num_particles)
+penalty_force = ti.Vector.field(dim, float, num_particles)
+positions0 = ti.Vector.field(dim, float, num_particles)
+radius_vector = ti.Vector.field(dim, float, num_particles)
+paused = ti.field(ti.i32, shape=())
 is_collided = ti.field(ti.i32, num_particles)
 any_is_collided = ti.field(ti.i32, shape=())
-paused = ti.field(ti.i32, shape=())
-pos_draw_red = ti.Vector.field(dim, float, num_particles)
-positions_inter = ti.Vector.field(dim, float, num_particles)
-radius_vector = ti.Vector.field(dim, float, num_particles)
 
 @ti.kernel
 def init_particles():
-    init_pos = ti.Vector([0.0, 10.0, 0.0])
+    init_pos = ti.Vector([50.0, 50.0, 0.0])
     cube_size = 20 
     spacing = 2 
     num_per_row = (int) (cube_size // spacing) + 1
@@ -33,18 +33,86 @@ def init_particles():
         col = (i % num_per_floor) % num_per_row
         positions[i] = ti.Vector([col*spacing, floor*spacing, row*spacing]) + init_pos
 
+@ti.kernel
+def translation(x: ti.types.vector(3, ti.f32)):
+    for i in range(num_particles):
+        positions[i] += x
 
-def init_velocities():
-    velocities.fill(ti.Vector([0.0, -0.1, 0.0]))
 
 @ti.kernel
-def translation():
+def collision_detection():
     for i in range(num_particles):
+        if (positions[i].y < 0):
+            is_collided[i] = True
+            any_is_collided[None] = True
+
+
+@ti.kernel
+def compute_radius_vector():
+    #compute the mass center and radius vector
+    center_mass = ti.Vector([0.0, 0.0, 0.0])
+    for i in range(num_particles):
+        center_mass += positions[i]
+    center_mass /= num_particles
+    for i in range(num_particles):
+        radius_vector[i] = positions[i] - center_mass
+    # print("center_mass=",center_mass)
+
+@ti.kernel
+def shape_matching():
+    #  update vel and pos firtly(without collision)
+    gravity = ti.Vector([0.0, -9.8, 0.0])
+    for i in range(num_particles):
+        positions0[i] = positions[i]
+        force[i] = gravity + penalty_force[i]
+        velocities[i] += mass_inv * force[i] * dt 
         positions[i] += velocities[i] * dt
 
+    #compute the new(matched shape) mass center
+    c = ti.Vector([0.0, 0.0, 0.0])
+    for i in range(num_particles):
+        c += positions[i]
+    c /= num_particles
+
+    #compute transformation matrix and extract rotation
+    A = sum1 = sum2 = ti.Matrix([[0.0] * 3 for _ in range(3)], ti.f32)
+    for i in range(num_particles):
+        sum1 += (positions[i] - c).outer_product(radius_vector[i])
+        sum2 += radius_vector[i].outer_product(radius_vector[i])
+    A = sum1 @ sum2.inverse()
+    R, _ = ti.polar_decompose(A)
+
+    R = ti.Matrix.identity(ti.f32, 3)
+
+    #update velocities and positions
+    for i in range(num_particles):
+        positions[i] = c + R @ radius_vector[i]
+        velocities[i] = (positions[i] - positions0[i]) / dt
+
+
+
 @ti.kernel
-def rotation():
-    theta = 0.1 / 180.0 * math.pi
+def update_vel_pos():
+    gravity = ti.Vector([0.0, -9.8, 0.0])
+    for i in range(num_particles):
+        force[i] = gravity + penalty_force[i]
+        velocities[i] += mass_inv * force[i] * dt 
+        positions[i] += velocities[i] * dt   
+
+@ti.kernel
+def collision_response():
+    eps = 2.0
+    k = 100.0
+    for i in range(num_particles):
+        if positions[i].y < eps:
+            n_dir = ti.Vector([0.0, 1.0, 0.0])
+            # positions[i].y = eps * 1.0001
+            penalty_force[i] = k * (eps - positions[i].y) * n_dir
+
+
+@ti.kernel
+def rotation(angle:ti.f32):
+    theta = angle / 180.0 * math.pi
     R = ti.Matrix([
     [ti.cos(theta), -ti.sin(theta), 0.0], 
     [ti.sin(theta), ti.cos(theta), 0.0], 
@@ -53,105 +121,27 @@ def rotation():
     for i in range(num_particles):
         positions[i] = R@positions[i]
 
-@ti.kernel
-def collision_detection():
-    for i in range(num_particles):
-        if (positions[i].y < 0):
-            is_collided[i] = True
-            # print(f"particle {i} is collied!")
-            any_is_collided[None] = True
-    # if (any_is_collided[None] == True):
-    #     print(f"at least one particle is collided!")
 
-@ti.kernel
-def collision_response_particle():
-    n_dir = ti.Vector([1, ti.sqrt(3), 0]).normalized()
-    n_dir = ti.Vector([0, 1, 0]).normalized()     
-    # print(velocities[0])
-
-    for i in range(num_particles):
-        if(is_collided[i] == True and velocities[i].dot(n_dir) < 0):
-            vn = velocities[i].dot(n_dir) * n_dir
-            vt = velocities[i] - vn
-            
-            vn_new = -mu_N * vn
-            a = ti.max((1 - mu_T * (1 + mu_N) * vn.norm() / (vt.norm() + 1e-5) ), 0)
-            vt_new = a * vt
-            
-            velocities[i] = vn_new + vt_new
-
-            #move to the boundary
-            # phi = 1.155 * positions[i].y
-            # positions_inter[i] = positions[i] +  ti.abs(phi) * n_dir
-            positions_inter[i] = positions[i] + velocities[i] * dt
-    # print(velocities[0])
-    
-
-@ti.kernel
-def shape_matching():
-    #compute the radius vector 
-    #(vector from the old center of mass to the point)
-    sum = ti.Vector([0.0, 0.0, 0.0])
-    for i in range(num_particles):
-        sum += positions[i]
-    center_mass = (1.0 / num_particles) * sum
-    for i in range(num_particles):
-        radius_vector[i] = positions[i] - center_mass
-    # print(center_mass)
-
-    #compute the new center of mass
-    sum = ti.Vector([0.0, 0.0, 0.0])
-    for i in range(num_particles):
-        sum += positions_inter[i]
-    center_mass_new = (1.0 / num_particles) * sum
-    # print(center_mass_new)
-
-    #compute the transformation matrix
-    pass
-    #polar decomposition and extract rotation
-    pass
-    R = ti.Matrix.identity(ti.f32, 3)
-
-    #update the velocities and positions
-    for i in range(num_particles):
-        velocities[i] = (center_mass_new + R @ radius_vector[i] - positions[i]) / dt
-        positions[i] = center_mass_new + R @ radius_vector[i]
-
-
-@ti.kernel
-def collision_response_force():
-    n_dir = ti.Vector([1, ti.sqrt(3), 0]).normalized()
-    k = 0.1
-    eps = 2.0
-    mass_inv = 1.0
-
-    for i in range(num_particles):
-        if(is_collided[i] == True and velocities[i].dot(n_dir) < 0):
-            phi = positions[i].y
-            penalty_force = k * (eps - phi) * n_dir
-            velocities[i] += dt * mass_inv * penalty_force
-            positions[i] += dt * velocities[i]
-
-#dye the rebounced particle to red, for DEBUG use
-@ti.kernel
-def dye_rebounced_red():
-    for i in pos_draw_red:
-        pos_draw_red[i] = ti.Vector([-1e10, -1e10, -1e10]) # throw away from screen
-        if is_collided[i] == True:
-            pos_draw_red[i] = pos_draw[i]
-
-def substep():
-    print(velocities[0])
-    is_collided.fill(0)
+def clear():
+    penalty_force.fill(0.0)
+    force.fill(0.0)
     any_is_collided.fill(0)
-    translation()
+    is_collided.fill(0)
+# ---------------------------------------------------------------------------- #
+#                                    substep                                   #
+# ---------------------------------------------------------------------------- #
+def substep():
+    clear()
     collision_detection()
+    # print("step once")
     if any_is_collided[None] == True:
-        collision_response_particle()
-        # collision_response_force()
+        collision_response()
         shape_matching()
-    print(velocities[0])
-    # rotation()
+    else:
+        update_vel_pos()
+# ---------------------------------------------------------------------------- #
+#                                  end substep                                 #
+# ---------------------------------------------------------------------------- #
 
 @ti.kernel
 def world_scale():
@@ -171,13 +161,20 @@ camera.fov(55)
 
 def main():
     init_particles()
-    init_velocities()
+    rotation(30)
+    compute_radius_vector() #store the shape of rigid body
 
+    paused[None] = True
     while window.running:
         if window.get_event(ti.ui.PRESS):
             #press space to pause the simulation
             if window.event.key == ti.ui.SPACE:
                 paused[None] = not paused[None]
+            
+            #proceed once for debug
+            if window.event.key == 'p':
+                substep()
+                # compute_radius_vector()
 
         #do the simulation in each step
         if (paused[None] == False) :
@@ -196,8 +193,6 @@ def main():
         #draw particles
         world_scale()
         scene.particles(pos_draw, radius=0.01, color=(0, 1, 1))
-        dye_rebounced_red()
-        scene.particles(pos_draw_red, radius=0.01, color=(1, 0, 0))
 
         #show the frame
         canvas.scene(scene)
