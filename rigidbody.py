@@ -3,7 +3,7 @@ import math
 
 ti.init()
 
-num_particles = 962
+num_particles = 1962
 dim=3
 world_scale_factor = 1.0/100.0
 dt = 1e-3
@@ -139,15 +139,17 @@ def clear():
 # ---------------------------------------------------------------------------- #
 #                                    substep                                   #
 # ---------------------------------------------------------------------------- #
+step = 0
 def substep():
+    global step
     clear()
     collision_detection()
-    # print("step once")
-    if any_is_collided[None] == True:
-        collision_response()
-        shape_matching()
-    else:
-        update_vel_pos()
+    # if any_is_collided[None] == True or step==0:
+    collision_response()
+    shape_matching()
+    # else:
+    # update_vel_pos()
+    step+=1
 # ---------------------------------------------------------------------------- #
 #                                  end substep                                 #
 # ---------------------------------------------------------------------------- #
