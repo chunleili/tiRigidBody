@@ -6,8 +6,8 @@ ti.init()
 num_particles = 968
 dim=3
 world_scale_factor = 1.0/100.0
-mu_N = 0.9 # normal velocity attenuation factor
-mu_T = 0.2 # coulomb friction factor
+mu_N = 1.0 # normal velocity attenuation factor
+mu_T = 1.0 # coulomb friction factor
 dt = 1.0
 
 positions = ti.Vector.field(dim, float, num_particles)
@@ -66,6 +66,8 @@ def collision_detection():
 @ti.kernel
 def collision_response_particle():
     n_dir = ti.Vector([1, ti.sqrt(3), 0]).normalized()
+    n_dir = ti.Vector([0, 1, 0]).normalized()     
+    # print(velocities[0])
 
     for i in range(num_particles):
         if(is_collided[i] == True and velocities[i].dot(n_dir) < 0):
@@ -79,8 +81,11 @@ def collision_response_particle():
             velocities[i] = vn_new + vt_new
 
             #move to the boundary
-            phi = 0.1
-            positions_inter[i] += ti.abs(phi) * n_dir
+            # phi = 1.155 * positions[i].y
+            # positions_inter[i] = positions[i] +  ti.abs(phi) * n_dir
+            positions_inter[i] = positions[i] + velocities[i] * dt
+    # print(velocities[0])
+    
 
 @ti.kernel
 def shape_matching():
@@ -92,14 +97,14 @@ def shape_matching():
     center_mass = (1.0 / num_particles) * sum
     for i in range(num_particles):
         radius_vector[i] = positions[i] - center_mass
-    print(center_mass)
+    # print(center_mass)
 
     #compute the new center of mass
     sum = ti.Vector([0.0, 0.0, 0.0])
     for i in range(num_particles):
         sum += positions_inter[i]
     center_mass_new = (1.0 / num_particles) * sum
-    print(center_mass_new)
+    # print(center_mass_new)
 
     #compute the transformation matrix
     pass
@@ -136,6 +141,7 @@ def dye_rebounced_red():
             pos_draw_red[i] = pos_draw[i]
 
 def substep():
+    print(velocities[0])
     is_collided.fill(0)
     any_is_collided.fill(0)
     translation()
@@ -144,6 +150,7 @@ def substep():
         collision_response_particle()
         # collision_response_force()
         shape_matching()
+    print(velocities[0])
     # rotation()
 
 @ti.kernel
