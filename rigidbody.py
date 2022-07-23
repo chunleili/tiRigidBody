@@ -127,7 +127,7 @@ def world_scale():
         pos_draw[i] = positions[i] * world_scale_factor
 
 #init the window, canvas, scene and camerea
-window = ti.ui.Window("rigidbody", (1024, 1024),vsync=True)
+window = ti.ui.Window("rigidbody", (1024, 512),vsync=True)
 canvas = window.get_canvas()
 scene = ti.ui.Scene()
 camera = ti.ui.make_camera()
