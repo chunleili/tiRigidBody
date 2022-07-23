@@ -3,10 +3,10 @@ import math
 
 ti.init()
 
-num_particles = 1962
+num_particles = 2000
 dim=3
 world_scale_factor = 1.0/100.0
-dt = 1e-3
+dt = 1e-2
 mass_inv = 1.0
 
 positions = ti.Vector.field(dim, float, num_particles)
@@ -17,12 +17,11 @@ penalty_force = ti.Vector.field(dim, float, num_particles)
 positions0 = ti.Vector.field(dim, float, num_particles)
 radius_vector = ti.Vector.field(dim, float, num_particles)
 paused = ti.field(ti.i32, shape=())
-is_collided = ti.field(ti.i32, num_particles)
-any_is_collided = ti.field(ti.i32, shape=())
+q_inv = ti.Matrix.field(n=3, m=3, dtype=float, shape=())
 
 @ti.kernel
 def init_particles():
-    init_pos = ti.Vector([50.0, 50.0, 0.0])
+    init_pos = ti.Vector([70.0, 50.0, 0.0])
     cube_size = 20 
     spacing = 2 
     num_per_row = (int) (cube_size // spacing) + 1
@@ -33,18 +32,35 @@ def init_particles():
         col = (i % num_per_floor) % num_per_row
         positions[i] = ti.Vector([col*spacing, floor*spacing, row*spacing]) + init_pos
 
-@ti.kernel
-def translation(x: ti.types.vector(3, ti.f32)):
-    for i in range(num_particles):
-        positions[i] += x
-
 
 @ti.kernel
-def collision_detection():
+def shape_matching():
+    #  update vel and pos firtly
+    gravity = ti.Vector([0.0, -9.8, 0.0])
     for i in range(num_particles):
-        if (positions[i].y < 0):
-            is_collided[i] = True
-            any_is_collided[None] = True
+        positions0[i] = positions[i]
+        f = gravity + penalty_force[i]
+        velocities[i] += mass_inv * f * dt 
+        positions[i] += velocities[i] * dt
+
+    #compute the new(matched shape) mass center
+    c = ti.Vector([0.0, 0.0, 0.0])
+    for i in range(num_particles):
+        c += positions[i]
+    c /= num_particles
+
+    #compute transformation matrix and extract rotation
+    A = sum1 = ti.Matrix([[0.0] * 3 for _ in range(3)], ti.f32)
+    for i in range(num_particles):
+        sum1 += (positions[i] - c).outer_product(radius_vector[i])
+    A = sum1 @ q_inv[None]
+
+    R, _ = ti.polar_decompose(A)
+
+    #update velocities and positions
+    for i in range(num_particles):
+        positions[i] = c + R @ radius_vector[i]
+        velocities[i] = (positions[i] - positions0[i]) / dt
 
 
 @ti.kernel
@@ -56,53 +72,20 @@ def compute_radius_vector():
     center_mass /= num_particles
     for i in range(num_particles):
         radius_vector[i] = positions[i] - center_mass
-    # print("center_mass=",center_mass)
-
-@ti.kernel
-def shape_matching():
-    #  update vel and pos firtly(without collision)
-    gravity = ti.Vector([0.0, -9.8, 0.0])
-    for i in range(num_particles):
-        positions0[i] = positions[i]
-        force[i] = gravity + penalty_force[i]
-        velocities[i] += mass_inv * force[i] * dt 
-        positions[i] += velocities[i] * dt
-
-    #compute the new(matched shape) mass center
-    c = ti.Vector([0.0, 0.0, 0.0])
-    for i in range(num_particles):
-        c += positions[i]
-    c /= num_particles
-
-    #compute transformation matrix and extract rotation
-    A = sum1 = sum2 = ti.Matrix([[0.0] * 3 for _ in range(3)], ti.f64)
-    for i in range(num_particles):
-        sum1 += (positions[i] - c).outer_product(radius_vector[i])
-        sum2 += radius_vector[i].outer_product(radius_vector[i])
-    A = sum1 @ sum2.inverse()
-    R, _ = ti.polar_decompose(A)
-
-    # R = ti.Matrix.identity(ti.f32, 3)
-
-    #update velocities and positions
-    for i in range(num_particles):
-        positions[i] = c + R @ radius_vector[i]
-        velocities[i] = (positions[i] - positions0[i]) / dt
-
 
 
 @ti.kernel
-def update_vel_pos():
-    gravity = ti.Vector([0.0, -9.8, 0.0])
+def precompute_q_inv():
+    res = ti.Matrix([[0.0] * 3 for _ in range(3)], ti.f64)
     for i in range(num_particles):
-        force[i] = gravity + penalty_force[i]
-        velocities[i] += mass_inv * force[i] * dt 
-        positions[i] += velocities[i] * dt   
+        res += radius_vector[i].outer_product(radius_vector[i])
+    q_inv[None] = res.inverse()
+
 
 @ti.kernel
 def collision_response():
     eps = 2.0 # the padding to prevent penatrating
-    k = 100.0 # stiffness of the penalty force
+    k = 20.0 # stiffness of the penalty force
     #boundary for skybox (xmin, ymin, zmin, xmax, ymax, zmax)
     boundary = ti.Matrix([[0.0, 0.0, 0.0], [100.0, 100.0, 100.0]], ti.f32)
     boundary[0,:] = boundary[0,:] + eps
@@ -112,11 +95,8 @@ def collision_response():
             n_dir = ti.Vector([0.0, 1.0, 0.0])
             phi = positions[i].y - boundary[0,1]
             penalty_force[i] = k * ti.abs(phi)  * n_dir
-
-        if positions[i].x < boundary[0,1]:
-            n_dir = ti.Vector([-1.0, 0.0, 0.0])
-            phi = positions[i].x - boundary[1,0]
-            penalty_force[i] = k * ti.abs(phi)  * n_dir
+    
+        #TODO: more boundaries...
 
 
 @ti.kernel
@@ -130,26 +110,13 @@ def rotation(angle:ti.f32):
     for i in range(num_particles):
         positions[i] = R@positions[i]
 
-
-def clear():
-    penalty_force.fill(0.0)
-    force.fill(0.0)
-    any_is_collided.fill(0)
-    is_collided.fill(0)
 # ---------------------------------------------------------------------------- #
 #                                    substep                                   #
 # ---------------------------------------------------------------------------- #
-step = 0
 def substep():
-    global step
-    clear()
-    collision_detection()
-    # if any_is_collided[None] == True or step==0:
+    penalty_force.fill(0.0)
     collision_response()
     shape_matching()
-    # else:
-    # update_vel_pos()
-    step+=1
 # ---------------------------------------------------------------------------- #
 #                                  end substep                                 #
 # ---------------------------------------------------------------------------- #
@@ -174,6 +141,7 @@ def main():
     init_particles()
     rotation(30)
     compute_radius_vector() #store the shape of rigid body
+    precompute_q_inv()
 
     paused[None] = True
     while window.running:
@@ -185,7 +153,6 @@ def main():
             #proceed once for debug
             if window.event.key == 'p':
                 substep()
-                # compute_radius_vector()
 
         #do the simulation in each step
         if (paused[None] == False) :
