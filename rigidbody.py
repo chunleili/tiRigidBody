@@ -19,6 +19,7 @@ radius_vector = ti.Vector.field(dim, float, num_particles)
 paused = ti.field(ti.i32, shape=())
 is_collided = ti.field(ti.i32, num_particles)
 any_is_collided = ti.field(ti.i32, shape=())
+q_inv = ti.Matrix.field(n=3, m=3, dtype=ti.f32, shape=())
 
 @ti.kernel
 def init_particles():
@@ -75,11 +76,10 @@ def shape_matching():
     c /= num_particles
 
     #compute transformation matrix and extract rotation
-    A = sum1 = sum2 = ti.Matrix([[0.0] * 3 for _ in range(3)], ti.f64)
+    A = sum1 = ti.Matrix([[0.0] * 3 for _ in range(3)], ti.f64)
     for i in range(num_particles):
         sum1 += (positions[i] - c).outer_product(radius_vector[i])
-        sum2 += radius_vector[i].outer_product(radius_vector[i])
-    A = sum1 @ sum2.inverse()
+    A = sum1 @ q_inv[None]
     R, _ = ti.polar_decompose(A)
 
     # R = ti.Matrix.identity(ti.f32, 3)
@@ -89,6 +89,12 @@ def shape_matching():
         positions[i] = c + R @ radius_vector[i]
         velocities[i] = (positions[i] - positions0[i]) / dt
 
+@ti.kernel
+def precompute_q_inv():
+    res = ti.Matrix([[0.0] * 3 for _ in range(3)], ti.f64)
+    for i in range(num_particles):
+        res += radius_vector[i].outer_product(radius_vector[i])
+    q_inv[None] = res.inverse()
 
 
 @ti.kernel
@@ -174,6 +180,7 @@ def main():
     init_particles()
     rotation(30)
     compute_radius_vector() #store the shape of rigid body
+    precompute_q_inv()
 
     paused[None] = True
     while window.running:
