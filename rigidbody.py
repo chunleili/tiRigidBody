@@ -13,7 +13,6 @@ positions = ti.Vector.field(dim, float, num_particles)
 velocities = ti.Vector.field(dim, float, num_particles)
 pos_draw = ti.Vector.field(dim, float, num_particles)
 force = ti.Vector.field(dim, float, num_particles)
-penalty_force = ti.Vector.field(dim, float, num_particles)
 positions0 = ti.Vector.field(dim, float, num_particles)
 radius_vector = ti.Vector.field(dim, float, num_particles)
 paused = ti.field(ti.i32, shape=())
@@ -39,10 +38,13 @@ def shape_matching():
     gravity = ti.Vector([0.0, -9.8, 0.0])
     for i in range(num_particles):
         positions0[i] = positions[i]
-        f = gravity + penalty_force[i]
+        f = gravity
         velocities[i] += mass_inv * f * dt 
         positions[i] += velocities[i] * dt
-
+        if positions[i].y < 0.0:
+            positions[i] = positions0[i]
+            positions[i].y = 0.0
+ 
     #compute the new(matched shape) mass center
     c = ti.Vector([0.0, 0.0, 0.0])
     for i in range(num_particles):
@@ -82,22 +84,6 @@ def precompute_q_inv():
     q_inv[None] = res.inverse()
 
 
-@ti.kernel
-def collision_response():
-    eps = 2.0 # the padding to prevent penatrating
-    k = 20.0 # stiffness of the penalty force
-    #boundary for skybox (xmin, ymin, zmin, xmax, ymax, zmax)
-    boundary = ti.Matrix([[0.0, 0.0, 0.0], [100.0, 100.0, 100.0]], ti.f32)
-    boundary[0,:] = boundary[0,:] + eps
-    boundary[1,:] = boundary[1,:] - eps
-    for i in range(num_particles):
-        if positions[i].y < boundary[0,1]:
-            n_dir = ti.Vector([0.0, 1.0, 0.0])
-            phi = positions[i].y - boundary[0,1]
-            penalty_force[i] = k * ti.abs(phi)  * n_dir
-    
-        #TODO: more boundaries...
-
 
 @ti.kernel
 def rotation(angle:ti.f32):
@@ -114,8 +100,6 @@ def rotation(angle:ti.f32):
 #                                    substep                                   #
 # ---------------------------------------------------------------------------- #
 def substep():
-    penalty_force.fill(0.0)
-    collision_response()
     shape_matching()
 # ---------------------------------------------------------------------------- #
 #                                  end substep                                 #
@@ -127,7 +111,7 @@ def world_scale():
         pos_draw[i] = positions[i] * world_scale_factor
 
 #init the window, canvas, scene and camerea
-window = ti.ui.Window("rigidbody", (1024, 512),vsync=True)
+window = ti.ui.Window("rigidbody", (1024, 1024),vsync=True)
 canvas = window.get_canvas()
 scene = ti.ui.Scene()
 camera = ti.ui.make_camera()
@@ -139,7 +123,7 @@ camera.fov(55)
 
 def main():
     init_particles()
-    rotation(30)
+    rotation(60) #initially rotate the cube
     compute_radius_vector() #store the shape of rigid body
     precompute_q_inv()
 
